@@ -33,7 +33,8 @@ extern "C" {
 
 using namespace std;
 
-RF24 radio(RPI_V2_GPIO_P1_22, RPI_V2_GPIO_P1_24, BCM2835_SPI_SPEED_1MHZ);
+//RF24 radio(RPI_V2_GPIO_P1_22, RPI_V2_GPIO_P1_24, BCM2835_SPI_SPEED_1MHZ);  /* Raspberry PI 3B */
+RF24 radio(402, 10);  /* Up2 x86 Device */
 PL1167_nRF24 prf(radio);
 HeiLight heiLight(&prf);
 MiLight miLight(&prf);

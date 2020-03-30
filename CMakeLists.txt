@@ -30,7 +30,7 @@ set(JSONCPP_WITH_PKGCONFIG_SUPPORT OFF CACHE BOOL "Generate and install .pc file
 add_subdirectory(external/jsoncpp)
 
 # Add RF24 library (note rf24-bcm is an optimized version for Raspberry Pi)
-find_library( RF24 rf24-bcm rf24)
+find_library( RF24 NAMES librf24.a rf24-bcm rf24)
 if (${RF24} STREQUAL "RF24-NOTFOUND")
     message(FATAL_ERROR "RF24 library not found!")
 else()
