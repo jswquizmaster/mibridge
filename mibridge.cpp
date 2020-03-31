@@ -7,9 +7,6 @@ Distributed under GPL-3.0 license
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <sys/socket.h>
-#include <netdb.h>
-#include <fcntl.h>
 
 #include <string>
 #include <iostream>
@@ -22,6 +19,7 @@ Distributed under GPL-3.0 license
 #include <RF24/RF24.h>
 
 #include "PL1167_nRF24.h"
+#include "posix_socket.h"
 
 extern "C" {
     #include "external/MQTT-C/include/mqtt.h"
@@ -33,13 +31,63 @@ extern "C" {
 
 using namespace std;
 
+struct reconnect_state_t {
+    const char* hostname;
+    const char* port;
+    const char* topic;
+    uint8_t* sendbuf;
+    size_t sendbufsz;
+    uint8_t* recvbuf;
+    size_t recvbufsz;
+};
+
 //RF24 radio(RPI_V2_GPIO_P1_22, RPI_V2_GPIO_P1_24, BCM2835_SPI_SPEED_1MHZ);  /* Raspberry PI 3B */
 RF24 radio(402, 10);  /* Up2 x86 Device */
 PL1167_nRF24 prf(radio);
 HeiLight heiLight(&prf);
 MiLight miLight(&prf);
 
-void publish_callback(void** unused, struct mqtt_response_publish *published) 
+void reconnect_client(struct mqtt_client* client, void **reconnect_state_vptr)
+{
+    struct reconnect_state_t *reconnect_state = *((struct reconnect_state_t**) reconnect_state_vptr);
+
+    // Close the clients socket if this isn't the initial reconnect call
+    if (client->error != MQTT_ERROR_INITIAL_RECONNECT) {
+        close(client->socketfd);
+    }
+
+    // Perform error handling here.
+    if (client->error != MQTT_ERROR_INITIAL_RECONNECT) {
+        printf("reconnect_client: called while client was in error state \"%s\"\n",
+               mqtt_error_str(client->error)
+        );
+    }
+
+    // Open a new socket.
+    int sockfd = open_nb_socket(reconnect_state->hostname, reconnect_state->port);
+    if (sockfd == -1) {
+        perror("Failed to open socket: ");
+        exit(EXIT_FAILURE);
+    }
+
+    // Reinitialize the client.
+    mqtt_reinit(client, sockfd,
+                reconnect_state->sendbuf, reconnect_state->sendbufsz,
+                reconnect_state->recvbuf, reconnect_state->recvbufsz
+    );
+
+    // Create an anonymous session
+    const char* client_id = NULL;
+    // Ensure we have a clean session
+    uint8_t connect_flags = MQTT_CONNECT_CLEAN_SESSION;
+    // Send connection request to the broker.
+    mqtt_connect(client, client_id, NULL, NULL, 0, NULL, NULL, connect_flags, 400);
+
+    // Subscribe to the topic.
+    mqtt_subscribe(client, reconnect_state->topic, 0);
+}
+
+void publish_callback(void** unused, struct mqtt_response_publish *published)
 {
     // note that published->topic_name is NOT null-terminated (here we'll change it to a c-string)
     char* topicName = (char*) malloc(published->topic_name_size + 1);
@@ -53,7 +101,7 @@ void publish_callback(void** unused, struct mqtt_response_publish *published)
     int groupID = 0;
     istringstream tokenStream(s);
     SmartLight *smartLight;
-    
+
     getline(tokenStream, tmp, '/');
     getline(tokenStream, tmp, '/');
     if (tmp.rfind("0x", 0) == 0) {
@@ -64,7 +112,7 @@ void publish_callback(void** unused, struct mqtt_response_publish *published)
     getline(tokenStream, bulbType, '/');
     getline(tokenStream, tmp, '/');
     groupID = stoi(tmp, 0, 10);
-    
+
     if(bulbType == "hei") {
         smartLight = &heiLight;
     } else if(bulbType == "rgbw") {
@@ -76,7 +124,7 @@ void publish_callback(void** unused, struct mqtt_response_publish *published)
 
     char* payloadptr = (char*) published->application_message;
     payloadptr[published->application_message_size] = '\0';
-    
+
     bool parsingSuccessful = reader.parse( payloadptr , root );
     if (parsingSuccessful) {
         for (auto const& id : root.getMemberNames()) {
@@ -110,12 +158,6 @@ int main(int argc, char* argv[])
 {
     struct addrinfo hints = {0};
 
-    hints.ai_family = AF_UNSPEC; // IPv4 or IPv6
-    hints.ai_socktype = SOCK_STREAM; // Must be TCP
-    int sockfd = -1;
-    int rv;
-    struct addrinfo *p, *servinfo;
-
     /*** get config from enviroment variables ***/
     const char* address = getenv("MIBRIDGE_ADDRESS");
     if (address == NULL ) address = DEFAULT_ADDRESS;
@@ -124,70 +166,35 @@ int main(int argc, char* argv[])
     const char* topic = getenv("MIBRIDGE_TOPIC");
     if (topic == NULL ) topic = DEFAULT_TOPIC;
 
-    /*** open the non-blocking TCP socket (connecting to the broker) ***/
-    // get address information
-    rv = getaddrinfo(address, port, &hints, &servinfo);
-    if(rv != 0) {
-        fprintf(stderr, "Failed to open socket (getaddrinfo): %s\n", gai_strerror(rv));
-        return -1;
-    }
 
-    // open the first possible socket
-    for(p = servinfo; p != NULL; p = p->ai_next) {
-        sockfd = socket(p->ai_family, p->ai_socktype, p->ai_protocol);
-        if (sockfd == -1) continue;
-
-        // connect to server
-        rv = connect(sockfd, servinfo->ai_addr, servinfo->ai_addrlen);
-        if(rv == -1) continue;
-        break;
-    }
-
-    if(rv == -1) {
-        fprintf(stderr, "Failed to open socket (connect): %s, %s, %s\n", address, port, gai_strerror(rv));
-        //return -1;
-    }
-
-    // free servinfo
-    freeaddrinfo(servinfo);
-
-    // make non-blocking
-    if (sockfd != -1) 
-        fcntl(sockfd, F_SETFL, fcntl(sockfd, F_GETFL) | O_NONBLOCK);
-    else {
-        perror("Failed to open socket: ");
-        exit(EXIT_FAILURE);
-    }
+    /*** build the reconnect_state structure which will be passed to reconnect ***/
+    struct reconnect_state_t reconnect_state;
+    reconnect_state.hostname = address;
+    reconnect_state.port = port;
+    reconnect_state.topic = topic;
+    uint8_t sendbuf[2048];
+    uint8_t recvbuf[1024];
+    reconnect_state.sendbuf = sendbuf;
+    reconnect_state.sendbufsz = sizeof(sendbuf);
+    reconnect_state.recvbuf = recvbuf;
+    reconnect_state.recvbufsz = sizeof(recvbuf);
 
     /*** setup a client ***/
     struct mqtt_client client;
-    uint8_t sendbuf[2048]; // sendbuf should be large enough to hold multiple whole mqtt messages
-    uint8_t recvbuf[1024]; // recvbuf should be large enough any whole mqtt message expected to be received
-    mqtt_init(&client, sockfd, sendbuf, sizeof(sendbuf), recvbuf, sizeof(recvbuf), publish_callback);
-    // Create an anonymous session
-    const char* client_id = NULL;
-    // Ensure we have a clean session
-    uint8_t connect_flags = MQTT_CONNECT_CLEAN_SESSION;
-    // Send connection request to the broker.
-    mqtt_connect(&client, client_id, NULL, NULL, 0, NULL, NULL, connect_flags, 400);
 
-    // check that we don't have any errors
-    if (client.error != MQTT_OK) {
-        fprintf(stderr, "error: %s\n", mqtt_error_str(client.error));
-        exit(EXIT_FAILURE);
-    }
+    mqtt_init_reconnect(&client,
+                        reconnect_client, &reconnect_state,
+                        publish_callback
+    );
 
-    /*** subscribe ***/
-    mqtt_subscribe(&client, topic, 0);
 
     printf("%s listening for '%s' messages.\n", argv[0], topic);
-    
-    while(1) 
+
+    while(1)
     {
         mqtt_sync(&client);
         usleep(100000U);
     }
 
     return 0;
-    
 }
