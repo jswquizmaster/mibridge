@@ -11,6 +11,7 @@ Distributed under GPL-3.0 license
 
 AbstractPL1167 *SmartLight::mPL1167 = 0;
 uint8_t SmartLight::mOutPacket[8];
+uint16_t SmartLight::mSW[2];
 
 SmartLight::SmartLight(AbstractPL1167 *pl1167) {
     if (mPL1167 == 0) {
@@ -19,17 +20,17 @@ SmartLight::SmartLight(AbstractPL1167 *pl1167) {
         mPL1167->setCRC(true);
         mPL1167->setPreambleLength(3);
         mPL1167->setTrailerLength(4);
-        mPL1167->setSyncword(mSyncwords[0], mSyncwords[1]);
+        mPL1167->setSyncword(mSW[0], mSW[1]);
         mPL1167->setMaxPacketLength(8);
-    }    
+    }
 }
 
 void SmartLight::setSyncwords(uint16_t syncwordA, uint16_t syncwordB) {
-    if((mSyncwords[0] == syncwordA) && (mSyncwords[1] == syncwordB))
+    if((mSW[0] == syncwordA) && (mSW[1] == syncwordB))
         return;
 
-    mSyncwords[0] = syncwordA;
-    mSyncwords[1] = syncwordB;
+    mSW[0] = syncwordA;
+    mSW[1] = syncwordB;
     mPL1167->setSyncword(syncwordA, syncwordB);
 }
 
@@ -49,7 +50,7 @@ int SmartLight::write(std::vector<uint8_t> channels, uint8_t frame[], size_t fra
     }
     printf(" [x%d]\n", resends);
     */
-    
+
     for (int i = 0; i < resends; i++) {
         for (size_t channel = 0; channel < channels.size(); channel++) {
             //printf("CHANNEL: %d\n", channels[channel]);

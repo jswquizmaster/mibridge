@@ -14,14 +14,14 @@ class SmartLight {
     private:
         static uint8_t mOutPacket[8];
         static AbstractPL1167 *mPL1167;
-        uint16_t mSyncwords[2] = {0x050A, 0x55AA};
+        static uint16_t mSW[2];
 
     protected:
         const int mBulbType = 0;
 
         void setSyncwords(uint16_t syncwordA, uint16_t syncwordB);
         int write(std::vector<uint8_t> channels, uint8_t frame[], size_t frame_length, int resends = 1);
-    
+
     public:
         SmartLight(AbstractPL1167 *pl1167);
         virtual void switchON(uint16_t remoteID, uint8_t groupID) = 0;
