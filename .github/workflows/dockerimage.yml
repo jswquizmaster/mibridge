@@ -15,8 +15,8 @@ jobs:
     steps:
     - uses: actions/checkout@v2
     - name: Login to Docker Registry
-      run: docker login -u ${{ secrets.DOCKERHUB_USERNAME }} -p ${{ secrets.DOCKERHUB_PASSWORD }} ${{ DOCKERHUB_SERVER }}
+      run: docker login -u ${{ secrets.DOCKERHUB_USERNAME }} -p ${{ secrets.DOCKERHUB_PASSWORD }} registry.schuwue.de
     - name: Build the Docker image
-      run: docker build . --file Dockerfile --tag ${{ DOCKERHUB_SERVER }}/mibridge
+      run: docker build . --file Dockerfile --tag registry.schuwue.de/mibridge
     - name: Push the Docker image
-      run: docker push ${{ DOCKERHUB_SERVER }}/mibridge
+      run: docker push registry.schuwue.de/mibridge
