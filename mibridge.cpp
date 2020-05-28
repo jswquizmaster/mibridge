@@ -87,6 +87,27 @@ void reconnect_client(struct mqtt_client* client, void **reconnect_state_vptr)
     mqtt_subscribe(client, reconnect_state->topic, 0);
 }
 
+void setLight(SmartLight *smartLight, string command, string param, uint16_t remoteID, uint8_t groupID)
+{
+    if (command == "status") {
+        if ( (param == "true") || (param == "ON") ) {
+            smartLight->switchON(remoteID, groupID);
+        } else if ( (param == "false") || (param == "OFF") ) {
+            smartLight->switchOFF(remoteID, groupID);
+        }
+    } else if (command == "hue") {
+        int hue = stoi(param);
+        smartLight->setColor(remoteID, groupID, hue);
+    } else if (command == "brightness") {
+        int brightness = stoi(param);
+        smartLight->setBrightness(remoteID, groupID, brightness);
+    } else if (command == "color") {
+        int colorTemp = stoi(param);
+        smartLight->setColorTemperature(remoteID, groupID, colorTemp);
+    }
+
+}
+
 void publish_callback(void** unused, struct mqtt_response_publish *published)
 {
     // note that published->topic_name is NOT null-terminated (here we'll change it to a c-string)
@@ -96,6 +117,7 @@ void publish_callback(void** unused, struct mqtt_response_publish *published)
 
     string s(topicName);
     string tmp;
+    string command;
     int remoteID = 0;
     string bulbType;
     int groupID = 0;
@@ -119,36 +141,24 @@ void publish_callback(void** unused, struct mqtt_response_publish *published)
         smartLight = &miLight;
     }
 
-    Json::Value root;
-    Json::Reader reader;
-
     char* payloadptr = (char*) published->application_message;
     payloadptr[published->application_message_size] = '\0';
 
-    bool parsingSuccessful = reader.parse( payloadptr , root );
-    if (parsingSuccessful) {
-        for (auto const& id : root.getMemberNames()) {
-            if (id == "status") {
-                string status = root[id].asString();
-                if (status == "ON") {
-                    smartLight->switchON(remoteID, groupID);
-                } else if (status == "OFF") {
-                    smartLight->switchOFF(remoteID, groupID);
-                }
-            } else if (id == "hue") {
-                int hue = stoi(root[id].asString());
-                smartLight->setColor(remoteID, groupID, hue);
-            } else if (id == "brightness") {
-                int brightness = stoi(root[id].asString());
-                smartLight->setBrightness(remoteID, groupID, brightness);
-            } else if (id == "color") {
-                int colorTemp = stoi(root[id].asString());
-                smartLight->setColorTemperature(remoteID, groupID, colorTemp);
+    if(getline(tokenStream, command, '/')) {
+        string param(payloadptr);
+        setLight(smartLight, command, param, remoteID, groupID);
+    } else {
+        Json::Value root;
+        Json::Reader reader;
+
+        bool parsingSuccessful = reader.parse( payloadptr , root );
+        if (parsingSuccessful) {
+            for (auto const& id : root.getMemberNames()) {
+                setLight(smartLight, id, root[id].asString(), remoteID, groupID);
             }
         }
     }
-
-    //printf("Received publish('%s'): %s\n", topicName, payloadptr);
+    printf("Received publish('%s'): %s\n", topicName, payloadptr);
 
     free(topicName);
 }
