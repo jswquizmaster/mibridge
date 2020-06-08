@@ -103,7 +103,8 @@ void HeiLight::setColor(uint16_t remoteID, uint8_t groupID, int hue) {
 
 void HeiLight::setColorTemperature(uint16_t remoteID, uint8_t groupID, int colorTemp) {
     // Currently only support 'white' which is 4000 Kelvin
-    if (colorTemp == 4000) {
+    // IoBroker IoT Adapter sends 250 for white
+    if (colorTemp == 250) {
         setBrightness(remoteID, groupID, 100);
     }
 }
