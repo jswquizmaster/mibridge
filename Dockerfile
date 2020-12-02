@@ -1,15 +1,14 @@
-FROM alpine:3.11 as build
+FROM debian:buster as build
 
 LABEL description="Build container - mibridge"
 
-RUN apk update && apk add --no-cache \ 
-    build-base binutils cmake curl file gcc g++ git libgcc libtool linux-headers make musl-dev tar unzip wget
+RUN apt-get update && apt-get install -y \
+    git build-essential cmake
 
 RUN cd /tmp \
-    && git clone https://github.com/jswquizmaster/RF24 -n \
-    && cd RF24 \
-    && git checkout 17e3eb12f772744f9376df2f31e83e55c1709471 \
-    && ./configure --driver=SPIDEV --ldconfig='' \
+    && git clone https://github.com/jswquizmaster/librf24-bcm -n \
+    && cd librf24-bcm \
+    && git checkout 3f970fd64b9b8ec0f369cf772ca25965281949c1 \
     && make \
     && make install
 
@@ -18,15 +17,12 @@ WORKDIR /mibridge
 
 RUN mkdir build \
     && cd build \
-    && cmake -DCMAKE_BUILD_TYPE=Release .. \
+    && cmake .. \
     && make
 
-FROM alpine:3.11 as runtime
+FROM debian:buster as runtime
 
 LABEL description="Run container - mibridge"
-
-RUN apk update && apk add --no-cache \ 
-    libgcc libstdc++
 
 COPY --from=build /usr/local/lib/librf24* /usr/local/lib/
 

@@ -41,8 +41,8 @@ struct reconnect_state_t {
     size_t recvbufsz;
 };
 
-//RF24 radio(RPI_V2_GPIO_P1_22, RPI_V2_GPIO_P1_24, BCM2835_SPI_SPEED_1MHZ);  /* Raspberry PI 3B */
-RF24 radio(402, 10);  /* Up2 x86 Device */
+RF24 radio(RPI_V2_GPIO_P1_22, RPI_V2_GPIO_P1_24, BCM2835_SPI_SPEED_1MHZ);  /* Raspberry PI 3B */
+//RF24 radio(402, 10);  /* Up2 x86 Device */
 PL1167_nRF24 prf(radio);
 HeiLight heiLight(&prf);
 MiLight miLight(&prf);
@@ -158,6 +158,7 @@ void publish_callback(void** unused, struct mqtt_response_publish *published)
             }
         }
     }
+
     printf("Received publish('%s'): %s\n", topicName, payloadptr);
 
     free(topicName);
@@ -169,11 +170,11 @@ int main(int argc, char* argv[])
     struct addrinfo hints = {0};
 
     /*** get config from enviroment variables ***/
-    const char* address = getenv("MIBRIDGE_ADDRESS");
+    const char* address = getenv("MQTT_ADDRESS");
     if (address == NULL ) address = DEFAULT_ADDRESS;
-    const char* port = getenv("MIBRIDGE_PORT");
+    const char* port = getenv("MQTT_PORT");
     if (port == NULL ) port = DEFAULT_PORT;
-    const char* topic = getenv("MIBRIDGE_TOPIC");
+    const char* topic = getenv("MQTT_TOPIC");
     if (topic == NULL ) topic = DEFAULT_TOPIC;
 
 
